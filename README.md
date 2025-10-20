@@ -48,16 +48,3 @@ Follow the steps below to import and explore the datasets in **Neo4j Desktop (v2
 7. **Run the Queries**  
    - Use the queries provided in `Cypher_Queries.csv` to compute degree distributions, reciprocity, clustering, and other graph statistics.
 
----
-
-## 🌐 Dataset Sources
-
-Both datasets used in this analysis are **publicly available** through the **Stanford Network Analysis Project (SNAP):**
-
-- **Email-Eu-core dataset:**  
-  [https://snap.stanford.edu/data/email-Eu-core.html](https://snap.stanford.edu/data/email-Eu-core.html)
-
-- **Amazon0302 dataset:**  
-  [https://snap.stanford.edu/data/amazon0302.html](https://snap.stanford.edu/data/amazon0302.html)
-
----
