@@ -1,0 +1,122 @@
+name,description,query,id,parentId,isFolder
+amazon_datasset_quries,,,0,,true
+outdegree_stats,,"MATCH (p:Product)
+WITH COUNT { (p)-[:ALSO_BOUGHT]->() } AS k
+RETURN avg(k) AS avg_out,
+       percentileCont(k,0.5) AS median_out,
+       min(k) AS min_out,
+       max(k) AS max_out;",1,0,false
+indegree_stats,,"MATCH (p:Product)
+WITH COUNT { (p)<-[:ALSO_BOUGHT]-() } AS k
+RETURN avg(k) AS avg_in,
+       percentileCont(k,0.5) AS median_in,
+       min(k) AS min_in,
+       max(k) AS max_in;",2,0,false
+std_stats,,"MATCH (p:Product)
+WITH
+    COUNT { (p)-[:ALSO_BOUGHT]->() } AS outdeg,
+    COUNT { (p)<-[:ALSO_BOUGHT]-() } AS indeg
+RETURN
+    stDev(outdeg) AS std_out_degree,
+    stDev(indeg) AS std_in_degree;",3,0,false
+global_reciprocity,,"MATCH (a:Product)-[:ALSO_BOUGHT]->(b:Product)
+WITH COUNT(*) AS total_edges
+
+MATCH (a:Product)-[:ALSO_BOUGHT]->(b:Product)
+WHERE (b)-[:ALSO_BOUGHT]->(a)
+WITH total_edges, COUNT(*) AS mutual_edges
+
+RETURN toFloat(mutual_edges) / total_edges AS global_reciprocity;",4,0,false
+avg_top20_outdeg_reciprocity,,"// 1. Identify top 20 nodes by out-degree
+MATCH (p)-[r:ALSO_BOUGHT]->()
+WITH p, count(r) AS outDegree
+ORDER BY outDegree DESC
+LIMIT 20
+
+// 2. Compute reciprocity for each of these nodes
+MATCH (p)-[:ALSO_BOUGHT]->(q)
+WITH p, collect(q) AS outNeighbors
+MATCH (p)<-[:ALSO_BOUGHT]-(q)
+WITH p, outNeighbors, collect(q) AS inNeighbors
+WITH p,
+     [x IN outNeighbors WHERE x IN inNeighbors] AS mutuals,
+     size(outNeighbors) AS outDegree
+WITH p,
+     CASE WHEN outDegree = 0 THEN 0.0 ELSE toFloat(size(mutuals)) / outDegree END AS reciprocity
+
+// 3. Aggregate average reciprocity
+RETURN avg(reciprocity) AS avg_reciprocity_top20_out;
+",5,0,false
+avg_top20_in_degree_reciprocity,,"// 1. Identify top 20 nodes by in-degree
+MATCH (p)<-[r:ALSO_BOUGHT]-()
+WITH p, count(r) AS inDegree
+ORDER BY inDegree DESC
+LIMIT 20
+
+// 2. Compute reciprocity for each of these nodes
+MATCH (p)-[:ALSO_BOUGHT]->(q)
+WITH p, collect(q) AS outNeighbors
+MATCH (p)<-[:ALSO_BOUGHT]-(q)
+WITH p, outNeighbors, collect(q) AS inNeighbors
+WITH p,
+     [x IN outNeighbors WHERE x IN inNeighbors] AS mutuals,
+     size(outNeighbors) AS outDegree
+WITH p,
+     CASE WHEN outDegree = 0 THEN 0.0 ELSE toFloat(size(mutuals)) / outDegree END AS reciprocity
+
+// 3. Aggregate average reciprocity
+RETURN avg(reciprocity) AS avg_reciprocity_top20_in;
+",6,0,false
+total_triangles,,"CALL gds.triangleCount.stream('amazonGraph')
+YIELD nodeId, triangleCount
+RETURN sum(triangleCount) / 3 AS total_triangles;
+",7,0,false
+clustering_coefficient_stats,,"CALL gds.localClusteringCoefficient.stream('amazonGraph')
+YIELD nodeId, localClusteringCoefficient
+RETURN avg(localClusteringCoefficient) AS avg_clustering,
+       stDev(localClusteringCoefficient) AS std_clustering;
+",8,0,false
+top20_indegree_Clustering_coefficient,,"CALL gds.localClusteringCoefficient.stream('amazonGraph')
+YIELD nodeId, localClusteringCoefficient
+WITH gds.util.asNode(nodeId) AS p, localClusteringCoefficient
+// Join with degree info from the database
+MATCH ()-[r:ALSO_BOUGHT]->(p)
+WITH p, count(r) AS inDegree, localClusteringCoefficient
+ORDER BY inDegree DESC
+LIMIT 20
+RETURN avg(localClusteringCoefficient) AS avg_clustering_top20_in;",9,0,false
+top20_outdeg_clustering_coefficient,,"CALL gds.localClusteringCoefficient.stream('amazonGraph')
+YIELD nodeId, localClusteringCoefficient
+WITH gds.util.asNode(nodeId) AS p, localClusteringCoefficient
+MATCH (p)-[r:ALSO_BOUGHT]->()
+WITH p, count(r) AS outDegree, localClusteringCoefficient
+ORDER BY outDegree DESC
+LIMIT 20
+RETURN avg(localClusteringCoefficient) AS avg_clustering_top20_out;",10,0,false
+degreeVSPageRank,,"
+MATCH (p:Product)
+OPTIONAL MATCH (p)-[:ALSO_BOUGHT]->(:Product)
+WITH p, count(*) AS out_deg
+OPTIONAL MATCH (:Product)-[:ALSO_BOUGHT]->(p)
+WITH p, out_deg, count(*) AS in_deg
+WITH p, in_deg, out_deg, (in_deg + out_deg) AS total_deg
+ORDER BY total_deg DESC
+LIMIT 10
+WITH collect(p) AS topDegreeProducts
+
+CALL gds.pageRank.stream('amazonGraph', { maxIterations: 20, dampingFactor: 0.85 })
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId) AS p, score, topDegreeProducts
+ORDER BY score DESC
+LIMIT 10
+WITH collect(p) AS topPageRankProducts, topDegreeProducts
+
+// overlap
+UNWIND topDegreeProducts AS deg
+WITH deg, topPageRankProducts
+WHERE deg IN topPageRankProducts
+RETURN
+  count(deg) AS overlap_count,
+  round(toFloat(count(deg)) / 10 * 100, 1) AS overlap_percentage,
+  collect(deg.id) AS overlapping_product_ids;
+",11,0,false

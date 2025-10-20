@@ -1,0 +1,202 @@
+name,description,query,id,parentId,isFolder
+email_dataset_queries,,,0,,true
+outdegree_stats,,"MATCH (p:Person)
+WITH COUNT { (p)-[:SENT_EMAIL]->() } AS k
+RETURN avg(k) AS avg_out,
+       percentileCont(k,0.5) AS median_out,
+       min(k) AS min_out,
+       max(k) AS max_out;",1,0,false
+indegree_stats,,"MATCH (p:Person)
+WITH COUNT { (p)<-[:SENT_EMAIL]-() } AS k
+RETURN avg(k) AS avg_in,
+       percentileCont(k,0.5) AS median_in,
+       min(k) AS min_in,
+       max(k) AS max_in;",2,0,false
+number_of_zero_indegrees,,"MATCH (p:Person)
+WHERE COUNT { (p)<-[:SENT_EMAIL]-() } = 0
+RETURN count(p) AS num_zero_in;",3,0,false
+number_of_zero_outdegrees,,"MATCH (p:Person)
+WHERE COUNT { (p)-[:SENT_EMAIL]->() } = 0
+RETURN count(p) AS num_zero_out;",4,0,false
+avg_people_per_department,,"MATCH (p:Person)-[:IS_IN]->(d:Department)
+WITH d, count(p) AS dept_size
+RETURN avg(dept_size) AS avg_people_per_department,
+       min(dept_size) AS min_size,
+       max(dept_size) AS max_size,
+       stDev(dept_size) AS stddev_size;",5,0,false
+internal_department_email_stats,,"MATCH (a:Person)-[:IS_IN]->(d:Department)<-[:IS_IN]-(b:Person)
+MATCH (a)-[:SENT_EMAIL]->(b)
+WITH d, count(*) AS intra_emails
+RETURN avg(intra_emails) AS avg_intra_emails_per_department,
+       min(intra_emails) AS min_intra,
+       max(intra_emails) AS max_intra;",6,0,false
+External_department_email_stats,,"MATCH (a:Person)-[:IS_IN]->(d1:Department),
+      (b:Person)-[:IS_IN]->(d2:Department)
+WHERE d1 <> d2
+MATCH (a)-[:SENT_EMAIL]->(b)
+WITH d1, d2, count(*) AS inter_emails
+RETURN avg(inter_emails) AS avg_inter_emails_per_pair,
+       max(inter_emails) AS max_inter_emails,
+       min(inter_emails) AS min_inter_emails;",7,0,false
+standard_deviations_for_degrees,,"MATCH (p:Person)
+WITH
+    COUNT { (p)-[:SENT_EMAIL]->() } AS outdeg,
+    COUNT { (p)<-[:SENT_EMAIL]-() } AS indeg
+RETURN
+    stDev(outdeg) AS std_out_degree,
+    stDev(indeg) AS std_in_degree;
+",8,0,false
+global_reciprocity,,"MATCH (a:Person)-[:SENT_EMAIL]->(b:Person)
+WHERE (b)-[:SENT_EMAIL]->(a)
+RETURN count(*) * 1.0 / count { (x:Person)-[:SENT_EMAIL]->(:Person) } AS global_reciprocity;
+",9,0,false
+reciprocity_top_20_senders,,"MATCH (p:Person)
+WITH p, COUNT { (p)-[:SENT_EMAIL]->() } AS outdeg
+ORDER BY outdeg DESC
+LIMIT 20
+WITH collect(p) AS topSenders
+
+// Compute reciprocity for them
+UNWIND topSenders AS a
+MATCH (a)-[:SENT_EMAIL]->(b)
+WITH a, COUNT(b) AS sent
+MATCH (b)-[:SENT_EMAIL]->(a)
+WITH a, sent, COUNT(b) AS reciprocated
+RETURN avg(toFloat(reciprocated) / sent) AS avg_reciprocity_top_senders;",10,0,false
+reciprocity_top_20_recievers,,"MATCH (p:Person)
+WITH p, COUNT { (p)<-[:SENT_EMAIL]-() } AS indeg
+ORDER BY indeg DESC
+LIMIT 20
+WITH collect(p) AS topReceivers
+
+// Compute reciprocity for them
+UNWIND topReceivers AS a
+MATCH (a)-[:SENT_EMAIL]->(b)
+WITH a, COUNT(b) AS sent
+MATCH (b)-[:SENT_EMAIL]->(a)
+WITH a, sent, COUNT(b) AS reciprocated
+RETURN avg(toFloat(reciprocated) / sent) AS avg_reciprocity_top_receivers;
+",11,0,false
+avg_cross_dep_reciprocity,,"// For each unordered department pair, count total cross-dept emails
+MATCH (a:Person)-[:IS_IN]->(d1:Department),
+      (b:Person)-[:IS_IN]->(d2:Department),
+      (a)-[:SENT_EMAIL]->(b)
+WHERE d1 <> d2
+WITH
+  CASE WHEN d1.id < d2.id THEN d1 ELSE d2 END AS da,
+  CASE WHEN d1.id < d2.id THEN d2 ELSE d1 END AS db,
+  COUNT(*) AS total_sent
+
+// For that same pair, count mutual (two-way) emails via a correlated subquery
+CALL {
+  WITH da, db
+  MATCH (a:Person)-[:IS_IN]->(da),
+        (b:Person)-[:IS_IN]->(db),
+        (a)-[:SENT_EMAIL]->(b),
+        (b)-[:SENT_EMAIL]->(a)
+  RETURN COUNT(*) AS mutual
+}
+
+WITH da, db, total_sent, mutual
+WHERE total_sent > 0
+RETURN avg( toFloat(mutual) / total_sent ) AS avg_cross_department_reciprocity;
+",12,0,false
+total_traingles,,"CALL gds.triangleCount.stream('emailGraph')
+YIELD nodeId, triangleCount
+RETURN sum(triangleCount) / 3 AS total_triangles;",13,0,false
+local_cluster_coefficient,,"CALL gds.localClusteringCoefficient.stream('emailGraph')
+YIELD nodeId, localClusteringCoefficient
+RETURN avg(localClusteringCoefficient) AS avg_clustering,
+       stDev(localClusteringCoefficient) AS std_clustering;",14,0,false
+department_based_clustering_coefficient,,"CALL {
+  CALL gds.localClusteringCoefficient.stream('emailGraphDept')
+  YIELD nodeId, localClusteringCoefficient
+  WITH gds.util.asNode(nodeId) AS p, localClusteringCoefficient
+  MATCH (p)-[:IS_IN]->(d:Department)
+  WITH d.id AS department,
+       avg(localClusteringCoefficient) AS avgDeptClustering,
+       stDev(localClusteringCoefficient) AS stdDeptClustering,
+       count(p) AS members
+  RETURN department, avgDeptClustering, stdDeptClustering, members
+}
+RETURN
+  avg(avgDeptClustering) AS mean_across_departments,
+  stDev(avgDeptClustering) AS std_across_departments,
+  avg(stdDeptClustering) AS mean_std_within_departments;",15,0,false
+degree_centerality#1,,"MATCH (d:Department)
+CALL {
+  WITH d
+  MATCH (d)<-[:IS_IN]-(p:Person)
+  OPTIONAL MATCH (:Person)-[:SENT_EMAIL]->(p)
+  WITH p, count(*) AS in_deg
+  ORDER BY in_deg DESC, id(p) ASC
+  RETURN p AS topIn
+  LIMIT 1
+}
+CALL {
+  WITH d
+  MATCH (d)<-[:IS_IN]-(p:Person)
+  OPTIONAL MATCH (p)-[:SENT_EMAIL]->(:Person)
+  WITH p, count(*) AS out_deg
+  ORDER BY out_deg DESC, id(p) ASC
+  RETURN p AS topOut
+  LIMIT 1
+}
+WITH d, topIn, topOut
+WHERE topIn = topOut
+RETURN collect(d.id) AS departments_with_same_top_person;
+",16,0,false
+degree_centerality#2,,"MATCH (d:Department)<-[:IS_IN]-(p:Person)
+WHERE d.id IN [0, 1, 3, 5, 15, 16, 19, 20, 21, 25, 26, 27, 32, 37, 38, 42]
+
+// out-degree
+OPTIONAL MATCH (p)-[:SENT_EMAIL]->(:Person)
+WITH d, p, count(*) AS out_deg
+
+// in-degree
+OPTIONAL MATCH (:Person)-[:SENT_EMAIL]->(p)
+WITH d, p, out_deg, count(*) AS in_deg
+
+// total-degree (now that in_deg exists)
+WITH d, p, in_deg, out_deg, (in_deg + out_deg) AS total_deg
+ORDER BY d.id, total_deg DESC, id(p)
+
+// top total-degree person per department
+WITH d, collect({p:p, in_deg:in_deg, out_deg:out_deg, total_deg:total_deg}) AS members
+WITH d, members[0] AS topPerson
+
+RETURN
+  d.id AS department,
+  topPerson.p AS top_person,
+  topPerson.in_deg AS in_degree,
+  topPerson.out_deg AS out_degree,
+  topPerson.total_deg AS total_degree
+ORDER BY department;",17,0,false
+pageRank_query,,"// --- compute top 20 by total degree (in + out) ---
+MATCH (p:Person)
+OPTIONAL MATCH (p)-[:SENT_EMAIL]->(:Person)
+WITH p, count(*) AS out_deg
+OPTIONAL MATCH (:Person)-[:SENT_EMAIL]->(p)
+WITH p, out_deg, count(*) AS in_deg
+WITH p, in_deg, out_deg, (in_deg + out_deg) AS total_deg
+ORDER BY total_deg DESC
+LIMIT 20
+WITH collect(p) AS topDegreePeople
+
+// --- compute top 20 by PageRank (requires existing 'emailGraph') ---
+CALL gds.pageRank.stream('emailGraph', { maxIterations: 20, dampingFactor: 0.85 })
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId) AS p, score, topDegreePeople
+ORDER BY score DESC
+LIMIT 20
+WITH collect(p) AS topPageRankPeople, topDegreePeople
+
+// --- compute overlap ---
+UNWIND topDegreePeople AS deg
+WITH deg, topPageRankPeople
+WHERE deg IN topPageRankPeople
+RETURN
+  count(deg) AS overlap_count,
+  round(toFloat(count(deg)) / 20 * 100, 1) AS overlap_percentage,
+  collect(deg.name) AS overlapping_people;
+",18,0,false
