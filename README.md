@@ -6,7 +6,7 @@ Both datasets are **publicly available through the Stanford Network Analysis Pro
 - **[Email-Eu-core dataset](https://snap.stanford.edu/data/email-Eu-core.html)**: represents internal communication within a European research institution.  
 - **[Amazon0302 dataset](https://snap.stanford.edu/data/amazon0302.html)**: represents product co-purchasing relationships on Amazon.  
 
-The goal of this study is to analyze and compare the structural and behavioral properties of human communication networks and machine-driven recommendation systems using **Neo4j Desktop (v2.0.4)**.  
+The goal of this study is to analyze and compare the structural and behavioral properties of human communication networks and machine-driven recommendation systems using **Neo4j**.  
 We focus on five fundamental graph properties: **in/out-degree distributions**, **reciprocity**, **node centrality measures**, and the combination of **number of triangles** and **clustering coefficient**.
 
 ---
